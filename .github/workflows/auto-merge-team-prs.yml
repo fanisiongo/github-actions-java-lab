@@ -1,0 +1,55 @@
+name: Auto merge team pull requests
+
+on:
+  pull_request_target:
+    branches:
+      - team1
+      - team2
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: >-
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      github.event.pull_request.head.ref == 'develop' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check mergeability
+        id: mergeability
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mergeable=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable')
+          echo "value=$mergeable" >> "$GITHUB_OUTPUT"
+
+          if [ "$mergeable" = "MERGEABLE" ]; then
+            echo "PR #$PR_NUMBER has no merge conflicts."
+          else
+            echo "::warning::PR #$PR_NUMBER is not mergeable. Automatic merge was skipped."
+            echo "## Automatic merge skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "PR #$PR_NUMBER has conflicts or GitHub could not confirm mergeability." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Merge pull request
+        if: steps.mergeability.outputs.value == 'MERGEABLE'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh pr merge "$PR_NUMBER" \
+            --merge \
+            --match-head-commit "$HEAD_SHA"

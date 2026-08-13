@@ -8,7 +8,7 @@ public final class HelloWorld {
 
     public static void main(String[] args) {
         try (Scanner scanner = new Scanner(System.in)) {
-            System.out.print("请输入第一个数字: ");
+            System.out.print("请输入 team2 的第一个数字: ");
             double left = scanner.nextDouble();
 
             System.out.print("请输入运算符 (+, -, *, /): ");

@@ -31,7 +31,17 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          mergeable=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable')
+          mergeable="UNKNOWN"
+
+          for attempt in {1..6}; do
+            mergeable=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable')
+            if [ "$mergeable" != "UNKNOWN" ]; then
+              break
+            fi
+            echo "Mergeability is not ready yet; waiting 5 seconds."
+            sleep 5
+          done
+
           echo "value=$mergeable" >> "$GITHUB_OUTPUT"
 
           if [ "$mergeable" = "MERGEABLE" ]; then

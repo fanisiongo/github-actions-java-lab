@@ -1,4 +1,4 @@
-name: Create team pull requests
+name: Create and merge team pull requests
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
       - closed
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
@@ -48,7 +48,7 @@ jobs:
           gh pr comment "$SOURCE_PR_NUMBER" \
             --body "Java compilation or tests failed after this PR was merged. No develop-to-team PRs were created. Details: ${RUN_URL}"
 
-  create-team-prs:
+  create-and-merge-team-prs:
     needs: compile
     runs-on: ubuntu-latest
 
@@ -81,13 +81,14 @@ jobs:
             echo "$commit_count commit(s) need to be merged from develop to $TARGET_BRANCH."
           fi
 
-      - name: Check for an existing pull request
+      - name: Find or create team pull request
         if: steps.changes.outputs.has_changes == 'true'
-        id: existing-pr
+        id: team-pr
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TARGET_BRANCH: ${{ matrix.target_branch }}
+          SOURCE_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           pr_number=$(gh pr list \
             --state open \
@@ -95,32 +96,69 @@ jobs:
             --base "$TARGET_BRANCH" \
             --json number \
             --jq '.[0].number // empty')
-          echo "number=$pr_number" >> "$GITHUB_OUTPUT"
 
-      - name: Create develop to team pull request
-        if: >-
-          steps.changes.outputs.has_changes == 'true' &&
-          steps.existing-pr.outputs.number == ''
+          if [ -z "$pr_number" ]; then
+            gh pr create \
+              --head develop \
+              --base "$TARGET_BRANCH" \
+              --title "Sync develop into $TARGET_BRANCH" \
+              --body "Automatically created after master to develop PR #${SOURCE_PR_NUMBER} was merged."
+            pr_number=$(gh pr list \
+              --state open \
+              --head develop \
+              --base "$TARGET_BRANCH" \
+              --json number \
+              --jq '.[0].number')
+          else
+            echo "PR #$pr_number from develop to $TARGET_BRANCH is already open."
+          fi
+
+          head_sha=$(gh pr view "$pr_number" --json headRefOid --jq '.headRefOid')
+          echo "number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check pull request mergeability
+        if: steps.changes.outputs.has_changes == 'true'
+        id: mergeability
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TARGET_BRANCH: ${{ matrix.target_branch }}
-          SOURCE_PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.team-pr.outputs.number }}
         run: |
-          gh pr create \
-            --head develop \
-            --base "$TARGET_BRANCH" \
-            --title "Sync develop into $TARGET_BRANCH" \
-            --body "Automatically created after master to develop PR #${SOURCE_PR_NUMBER} was merged."
+          mergeable="UNKNOWN"
 
-      - name: Report existing pull request
+          for attempt in {1..6}; do
+            mergeable=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable')
+            if [ "$mergeable" != "UNKNOWN" ]; then
+              break
+            fi
+            echo "Mergeability is not ready yet; waiting 5 seconds."
+            sleep 5
+          done
+
+          echo "value=$mergeable" >> "$GITHUB_OUTPUT"
+
+          if [ "$mergeable" = "MERGEABLE" ]; then
+            echo "PR #$PR_NUMBER has no merge conflicts."
+          else
+            echo "::warning::PR #$PR_NUMBER has conflicts or mergeability could not be confirmed. Automatic merge was skipped."
+            echo "## Automatic merge skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "PR #$PR_NUMBER remains open because it has conflicts or GitHub could not confirm mergeability." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Merge team pull request
         if: >-
           steps.changes.outputs.has_changes == 'true' &&
-          steps.existing-pr.outputs.number != ''
+          steps.mergeability.outputs.value == 'MERGEABLE'
         env:
-          PR_NUMBER: ${{ steps.existing-pr.outputs.number }}
-          TARGET_BRANCH: ${{ matrix.target_branch }}
-        run: echo "PR #$PR_NUMBER from develop to $TARGET_BRANCH is already open."
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.team-pr.outputs.number }}
+          HEAD_SHA: ${{ steps.team-pr.outputs.head_sha }}
+        run: |
+          gh pr merge "$PR_NUMBER" \
+            --merge \
+            --match-head-commit "$HEAD_SHA"
 
       - name: Report no changes
         if: steps.changes.outputs.has_changes == 'false'

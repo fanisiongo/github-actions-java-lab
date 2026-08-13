@@ -1,0 +1,129 @@
+name: Create team pull requests
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types:
+      - closed
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  compile:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.ref == 'master'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Compile and test
+        run: mvn --batch-mode --no-transfer-progress clean verify
+
+      - name: Report compilation failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "::error::Java compilation or tests failed. Team pull requests were not created."
+          echo "## Java build failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "The develop branch did not pass Maven verification, so no team pull requests were created." >> "$GITHUB_STEP_SUMMARY"
+          gh pr comment "$SOURCE_PR_NUMBER" \
+            --body "Java compilation or tests failed after this PR was merged. No develop-to-team PRs were created. Details: ${RUN_URL}"
+
+  create-team-prs:
+    needs: compile
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target_branch:
+          - team1
+          - team2
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Check for changes to merge
+        id: changes
+        env:
+          TARGET_BRANCH: ${{ matrix.target_branch }}
+        run: |
+          git fetch origin develop "$TARGET_BRANCH"
+          commit_count=$(git rev-list --count "origin/${TARGET_BRANCH}..origin/develop")
+          if [ "$commit_count" -eq 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No commits need to be merged from develop to $TARGET_BRANCH."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "$commit_count commit(s) need to be merged from develop to $TARGET_BRANCH."
+          fi
+
+      - name: Check for an existing pull request
+        if: steps.changes.outputs.has_changes == 'true'
+        id: existing-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_BRANCH: ${{ matrix.target_branch }}
+        run: |
+          pr_number=$(gh pr list \
+            --state open \
+            --head develop \
+            --base "$TARGET_BRANCH" \
+            --json number \
+            --jq '.[0].number // empty')
+          echo "number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Create develop to team pull request
+        if: >-
+          steps.changes.outputs.has_changes == 'true' &&
+          steps.existing-pr.outputs.number == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_BRANCH: ${{ matrix.target_branch }}
+          SOURCE_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr create \
+            --head develop \
+            --base "$TARGET_BRANCH" \
+            --title "Sync develop into $TARGET_BRANCH" \
+            --body "Automatically created after master to develop PR #${SOURCE_PR_NUMBER} was merged."
+
+      - name: Report existing pull request
+        if: >-
+          steps.changes.outputs.has_changes == 'true' &&
+          steps.existing-pr.outputs.number != ''
+        env:
+          PR_NUMBER: ${{ steps.existing-pr.outputs.number }}
+          TARGET_BRANCH: ${{ matrix.target_branch }}
+        run: echo "PR #$PR_NUMBER from develop to $TARGET_BRANCH is already open."
+
+      - name: Report no changes
+        if: steps.changes.outputs.has_changes == 'false'
+        env:
+          TARGET_BRANCH: ${{ matrix.target_branch }}
+        run: echo "No pull request is needed for $TARGET_BRANCH."

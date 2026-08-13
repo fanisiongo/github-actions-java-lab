@@ -4,7 +4,7 @@ public final class BrokenCalculatorDemo {
     private BrokenCalculatorDemo() {
     }
 
-    public static void demonstrateFailure() {
-        Calculator.thisMethodDoesNotExist();
+    public static double demonstrateCalculation() {
+        return Calculator.calculate(10, "+", 5);
     }
 }

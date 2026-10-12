@@ -26,16 +26,16 @@ jobs:
           CURRENT_REPOSITORY: ${{ github.repository }}
         run: |
           if [ "$HEAD_REPOSITORY" != "$CURRENT_REPOSITORY" ]; then
-            echo "::error::不允许从其他仓库的分支合并"
+            echo "::error::他のリポジトリのブランチからのマージは許可されていません"
             exit 1
           fi
 
           case "$HEAD_BRANCH" in
             master|team1|team2)
-              echo "允许的来源分支：$HEAD_BRANCH"
+              echo "許可されたソースブランチ: $HEAD_BRANCH"
               ;;
             *)
-              echo "::error::不允许从 $HEAD_BRANCH 合并到 develop"
+              echo "::error::$HEAD_BRANCH から develop へのマージは許可されていません"
               exit 1
               ;;
           esac

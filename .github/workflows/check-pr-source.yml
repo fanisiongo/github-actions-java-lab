@@ -9,6 +9,7 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      - edited
 
 permissions:
   contents: read
@@ -39,3 +40,37 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Check PR checklist
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        shell: python
+        run: |
+          import os
+          import re
+          import sys
+
+          body = os.environ.get("PR_BODY", "")
+          summary = re.search(
+              r"(?ms)^## 概要\s*\n(.*?)(?=^##\s|\Z)",
+              body,
+          )
+
+          if summary:
+              summary_text = re.sub(r"<!--.*?-->", "", summary.group(1), flags=re.S).strip()
+          else:
+              summary_text = ""
+
+          if not summary_text:
+              print("::error::「概要」を入力してください")
+              sys.exit(1)
+
+          if not re.search(r"(?im)^\s*-\s*\[[xX]\]\s*已确认\s*$", body):
+              print("::error::「是否确认」の「已确认」にチェックを入れてください")
+              sys.exit(1)
+
+          if not re.search(r"(?im)^\s*-\s*\[[xX]\]\s*已编译\s*$", body):
+              print("::error::「是否编译」の「已编译」にチェックを入れてください")
+              sys.exit(1)
+
+          print("PRの概要、確認チェック、コンパイルチェックを確認しました")

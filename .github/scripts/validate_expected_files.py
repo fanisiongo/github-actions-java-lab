@@ -22,12 +22,12 @@ class ValidationError(ValueError):
 
 def extract_paths(body: str, start_marker: str, end_marker: str, label: str) -> set[str]:
     if body.count(start_marker) != 1 or body.count(end_marker) != 1:
-        raise ValidationError(f"{label}区域的开始和结束标记必须各保留一个")
+        raise ValidationError(f"{label}領域の開始・終了マーカーは、それぞれ1つずつ残してください")
 
     start = body.index(start_marker) + len(start_marker)
     end = body.index(end_marker)
     if start >= end:
-        raise ValidationError(f"{label}区域的标记顺序不正确")
+        raise ValidationError(f"{label}領域のマーカー順序が正しくありません")
 
     paths: list[str] = []
     for raw_line in body[start:end].splitlines():
@@ -38,7 +38,7 @@ def extract_paths(body: str, start_marker: str, end_marker: str, label: str) -> 
 
     duplicates = sorted({path for path in paths if paths.count(path) > 1})
     if duplicates:
-        raise ValidationError(f"{label}区域存在重复路径: {', '.join(duplicates)}")
+        raise ValidationError(f"{label}領域に重複したパスがあります: {', '.join(duplicates)}")
 
     for path in paths:
         validate_path(path, label)
@@ -48,15 +48,15 @@ def extract_paths(body: str, start_marker: str, end_marker: str, label: str) -> 
 
 def validate_path(path: str, label: str) -> None:
     if path.startswith(("/", "./")):
-        raise ValidationError(f"{label}必须填写仓库根目录的相对路径: {path}")
+        raise ValidationError(f"{label}にはリポジトリのルートからの相対パスを入力してください: {path}")
     if "\\" in path:
-        raise ValidationError(f"{label}必须使用正斜杠 '/': {path}")
+        raise ValidationError(f"{label}の区切り文字にはスラッシュ '/' を使用してください: {path}")
     if path.endswith("/"):
-        raise ValidationError(f"{label}不能填写目录，只能填写文件: {path}")
+        raise ValidationError(f"{label}にはディレクトリではなくファイルを入力してください: {path}")
     if any(character in path for character in "*?["):
-        raise ValidationError(f"{label}不能使用通配符: {path}")
+        raise ValidationError(f"{label}ではワイルドカードを使用できません: {path}")
     if ".." in PurePosixPath(path).parts:
-        raise ValidationError(f"{label}不能包含 '..': {path}")
+        raise ValidationError(f"{label}に '..' を含めることはできません: {path}")
 
 
 def load_actual_files(path: str) -> tuple[set[str], set[str]]:
@@ -70,7 +70,7 @@ def load_actual_files(path: str) -> tuple[set[str], set[str]]:
 
     if len(files) >= 3000:
         raise ValidationError(
-            "PR包含3000个或更多文件，超过GitHub文件列表API的安全校验范围"
+            "PRに3000件以上のファイルが含まれているため、GitHubのファイル一覧APIで安全に検証できる範囲を超えています"
         )
 
     deleted: set[str] = set()
@@ -80,14 +80,14 @@ def load_actual_files(path: str) -> tuple[set[str], set[str]]:
         status = item.get("status", "").lower()
         filename = item.get("filename")
         if not filename:
-            raise ValidationError("GitHub返回了缺少文件路径的变更记录")
+            raise ValidationError("GitHubからファイルパスのない変更情報が返されました")
 
         if status == "removed":
             deleted.add(filename)
         elif status == "renamed":
             previous_filename = item.get("previous_filename")
             if not previous_filename:
-                raise ValidationError(f"重命名文件缺少原路径: {filename}")
+                raise ValidationError(f"名前変更されたファイルに変更前のパスがありません: {filename}")
             deleted.add(previous_filename)
             updated.add(filename)
         else:
@@ -124,20 +124,20 @@ def build_report(
 
     if passed:
         report = [
-            "## 预期文件清单校验通过",
+            "## 変更予定ファイル一覧の検証に成功しました",
             "",
-            f"- 删除文件: {len(actual_deleted)}",
-            f"- 更新文件: {len(actual_updated)}",
+            f"- 削除ファイル: {len(actual_deleted)}",
+            f"- 更新ファイル: {len(actual_updated)}",
             "",
         ]
         return True, "\n".join(report)
 
-    report = ["## 预期文件清单校验失败", ""]
-    report += difference_lines("实际删除但未申报", undeclared_deleted, "+")
-    report += difference_lines("已申报删除但实际未删除", nonexistent_deleted, "-")
-    report += difference_lines("实际更新但未申报", undeclared_updated, "+")
-    report += difference_lines("已申报更新但实际未更新", nonexistent_updated, "-")
-    report += ["请修正PR描述中的预期文件清单，或从PR中移除非预期修改。", ""]
+    report = ["## 変更予定ファイル一覧の検証に失敗しました", ""]
+    report += difference_lines("実際に削除されたが申告されていないファイル", undeclared_deleted, "+")
+    report += difference_lines("削除予定として申告されたが実際には削除されていないファイル", nonexistent_deleted, "-")
+    report += difference_lines("実際に更新されたが申告されていないファイル", undeclared_updated, "+")
+    report += difference_lines("更新予定として申告されたが実際には更新されていないファイル", nonexistent_updated, "-")
+    report += ["PRの説明にある変更予定ファイル一覧を修正するか、予定外の変更をPRから除外してください。", ""]
     return False, "\n".join(report)
 
 
@@ -154,13 +154,13 @@ def main() -> int:
 
     try:
         body = os.environ.get("PR_BODY", "")
-        expected_deleted = extract_paths(body, DELETED_START, DELETED_END, "删除文件")
-        expected_updated = extract_paths(body, UPDATED_START, UPDATED_END, "更新文件")
+        expected_deleted = extract_paths(body, DELETED_START, DELETED_END, "削除ファイル")
+        expected_updated = extract_paths(body, UPDATED_START, UPDATED_END, "更新ファイル")
 
         overlap = expected_deleted & expected_updated
         if overlap:
             raise ValidationError(
-                "同一路径不能同时填写在删除文件和更新文件中: "
+                "同じパスを削除ファイルと更新ファイルの両方に入力することはできません: "
                 + ", ".join(sorted(overlap))
             )
 
@@ -175,11 +175,11 @@ def main() -> int:
         print(report)
 
         if not passed:
-            print("::error::预期文件清单与PR实际变更不一致，请查看Job Summary")
+            print("::error::変更予定ファイル一覧とPRの実際の変更内容が一致しません。Job Summaryを確認してください")
             return 1
         return 0
     except (OSError, json.JSONDecodeError, ValidationError) as error:
-        report = f"## 预期文件清单校验失败\n\n{error}\n"
+        report = f"## 変更予定ファイル一覧の検証に失敗しました\n\n{error}\n"
         write_summary(args.summary, report)
         print(f"::error::{error}")
         return 1

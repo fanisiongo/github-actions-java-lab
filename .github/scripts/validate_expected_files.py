@@ -68,6 +68,11 @@ def load_actual_files(path: str) -> tuple[set[str], set[str]]:
     else:
         files = payload
 
+    if len(files) >= 3000:
+        raise ValidationError(
+            "PR包含3000个或更多文件，超过GitHub文件列表API的安全校验范围"
+        )
+
     deleted: set[str] = set()
     updated: set[str] = set()
 

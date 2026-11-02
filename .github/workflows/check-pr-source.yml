@@ -65,12 +65,12 @@ jobs:
               print("::error::「概要」を入力してください")
               sys.exit(1)
 
-          if not re.search(r"(?im)^\s*-\s*\[[xX]\]\s*已确认\s*$", body):
-              print("::error::「是否确认」の「已确认」にチェックを入れてください")
+          if not re.search(r"(?im)^\s*-\s*\[[xX]\]\s*確認済み\s*$", body):
+              print("::error::「確認」の「確認済み」にチェックを入れてください")
               sys.exit(1)
 
-          if not re.search(r"(?im)^\s*-\s*\[[xX]\]\s*已编译\s*$", body):
-              print("::error::「是否编译」の「已编译」にチェックを入れてください")
+          if not re.search(r"(?im)^\s*-\s*\[[xX]\]\s*コンパイル済み\s*$", body):
+              print("::error::「コンパイル確認」の「コンパイル済み」にチェックを入れてください")
               sys.exit(1)
 
           print("PRの概要、確認チェック、コンパイルチェックを確認しました")

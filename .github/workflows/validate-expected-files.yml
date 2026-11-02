@@ -1,0 +1,49 @@
+name: Validate expected file list
+
+on:
+  pull_request_target:
+    branches:
+      - develop
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - edited
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate-expected-files:
+    name: Expected file list
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out trusted validation code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Get changed files from pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api \
+            --paginate \
+            --slurp \
+            "repos/${GH_REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
+            > "${RUNNER_TEMP}/pr-files.json"
+
+      - name: Compare expected and actual files
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python .github/scripts/validate_expected_files.py \
+            --files-json "${RUNNER_TEMP}/pr-files.json" \
+            --summary "${GITHUB_STEP_SUMMARY}"
+

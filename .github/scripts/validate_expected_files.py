@@ -32,7 +32,7 @@ def extract_paths(body: str, start_marker: str, end_marker: str, label: str) -> 
     paths: list[str] = []
     for raw_line in body[start:end].splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("```"):
+        if not line or line.startswith("```") or line == "なし":
             continue
         paths.append(line)
 

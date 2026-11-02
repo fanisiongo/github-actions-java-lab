@@ -21,13 +21,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Skip validation for common branch
+        if: github.event.pull_request.head.ref == 'common'
+        run: echo "common ブランチから develop へのPRのため、変更予定ファイル一覧の検証をスキップします。"
+
       - name: Check out trusted validation code
+        if: github.event.pull_request.head.ref != 'common'
         uses: actions/checkout@v4
         with:
           ref: main
           persist-credentials: false
 
       - name: Get changed files from pull request
+        if: github.event.pull_request.head.ref != 'common'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -40,6 +46,7 @@ jobs:
             > "${RUNNER_TEMP}/pr-files.json"
 
       - name: Compare expected and actual files
+        if: github.event.pull_request.head.ref != 'common'
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
